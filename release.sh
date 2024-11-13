@@ -30,5 +30,5 @@ for example in examples/*.rs; do
 done
 
 # Run release script
-#echo "Running release process..."
-#cargo run --bin release
+echo "Running release process..."
+cargo run --bin release
