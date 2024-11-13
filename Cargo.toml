@@ -1,0 +1,18 @@
+[package]
+name = "sovran-state"
+version = "0.1.0"
+edition = "2021"
+authors = ["Sovran.la <support@sovran.la>"]
+description = "Simple state management for Rust"
+repository = "https://github.com/sovran-rs/sovran-state"
+license = "MIT"
+readme = "README.md"
+keywords = ["state", "redux", "concurrency", "flux"]
+categories = ["concurrency", "data-structures"]
+
+[dependencies]
+toml_edit = "0.22"
+
+[[bin]]
+name = "release"
+path = "tools/release.rs"
