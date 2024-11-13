@@ -1,6 +1,6 @@
 [package]
 name = "sovran-state"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Sovran.la <support@sovran.la>"]
 description = "Simple state management for Rust"
