@@ -245,7 +245,8 @@ impl Store {
         }
     }
 
-    /// Subscribes to state changes of a specific type with a given callback.
+    /// Subscribes to state changes of a specific type with a given callback. The callback will
+    /// receive the current state of the type immediately.
     ///
     /// # Arguments
     /// * `callback` - A callback function that will be invoked when the state changes.
@@ -276,10 +277,16 @@ impl Store {
     pub fn subscribe<S: State, F: Fn(&S) + Send + Sync + 'static>(&self, callback: F) -> Result<SubscriberId, StoreError> {
         let containers = self.containers.lock().map_err(|_| StoreError::LockError)?;
         let container = containers.get(&TypeId::of::<S>()).ok_or(StoreError::StateNotFound)?;
-        let id = container
+        let container = container
             .downcast_ref::<Container<S>>()
-            .ok_or(StoreError::WrongStateType)?
-            .subscribe(callback)?;
+            .ok_or(StoreError::WrongStateType)?;
+
+        // Get current state and call the callback immediately
+        let current_state = container.get_state()?;
+        callback(&current_state);
+
+        // Subscribe to future updates
+        let id = container.subscribe(callback)?;
         Ok(id)
     }
 
@@ -459,13 +466,16 @@ mod tests {
             println!("Subscriber called with state: {:?}", state);
             let mut called = subscriber_called_clone.lock().unwrap();
             *called = true;
-            assert_eq!(state.value, 1);
         }).unwrap();
 
         assert!(store.dispatch(TestIncrementAction).is_ok());
         thread::sleep(Duration::from_millis(100));
 
         assert_eq!(*subscriber_called.lock().unwrap(), true);
+
+        // state made it to 1.
+        let s = store.get_state::<MyState>().unwrap();
+        assert_eq!(s.value, 1);
 
         // Test unsubscribe
         store.unsubscribe::<MyState>(subscriber_id).unwrap();
@@ -476,6 +486,39 @@ mod tests {
 
         // Subscriber should no longer be called
         assert_eq!(*subscriber_called.lock().unwrap(), false);
+    }
+
+    #[test]
+    fn test_subscription_initial_update() {
+        let store = Store::new();
+        store.provide(MyState { value: 0 }).unwrap();
+
+        let initial_callback_called = Arc::new(Mutex::new(false));
+        let initial_callback_called_clone = initial_callback_called.clone();
+
+        // Create a subscriber that tracks if it was called
+        let subscriber_id = store.subscribe(move |_state: &MyState| {
+            let mut called = initial_callback_called_clone.lock().unwrap();
+            *called = true;
+        }).unwrap();
+
+        // Verify the initial state was supplied, scope the lock
+        {
+            assert_eq!(*initial_callback_called.lock().unwrap(), true);
+        }
+
+        // Reset the flag, scope the lock
+        {
+            *initial_callback_called.lock().unwrap() = false;
+        }
+
+        // Verify the a second update still works
+        store.dispatch(TestIncrementAction).unwrap();
+        thread::sleep(Duration::from_millis(100));
+        assert_eq!(*initial_callback_called.lock().unwrap(), true);
+
+        // Cleanup
+        store.unsubscribe::<MyState>(subscriber_id).unwrap();
     }
 
     #[test]
@@ -547,10 +590,12 @@ mod tests {
 
         let sub1_called = sub1_inc.lock().unwrap().clone();
         let sub2_called = sub2_inc.lock().unwrap().clone();
+
         println!("Subscriber 1 called {} times", sub1_called);
         println!("Subscriber 2 called {} times", sub2_called);
 
-        assert_eq!(sub1_called, expected_my_state_value);
-        assert_eq!(sub2_called, expected_another_state_count);
+        // +1 because the initial state was dispatched
+        assert_eq!(sub1_called, expected_my_state_value + 1);
+        assert_eq!(sub2_called, expected_another_state_count + 1);
     }
 }
